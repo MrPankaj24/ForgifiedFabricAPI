@@ -1,0 +1,62 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 26.2.x
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    container:
+      image: mcr.microsoft.com/openjdk/jdk:25-ubuntu
+      options: --user root
+
+    steps:
+      - name: Install Git
+        run: apt update && apt install git -y
+
+      - name: Add safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-cleanup: true
+
+      - name: Setup env properties
+        shell: bash
+        run: |
+          mkdir -p ~/.gradle/
+          echo "GRADLE_USER_HOME=${HOME}/.gradle" >> $GITHUB_ENV
+
+      - name: Create placeholder assets dir
+        run: mkdir -p ${{ env.GRADLE_USER_HOME }}/caches/fabric-loom/assets
+
+      - name: Build JAR with Gradle
+        run: ./gradlew build --no-daemon --stacktrace
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v26.2-build-${{ github.run_number }}"
+          name: "ForgifiedFabricAPI 26.2 (Build ${{ github.run_number }})"
+          body: "Automated build for Minecraft 26.2 compiled via GitHub Actions."
+          draft: false
+          prerelease: false
+          files: |
+            build/libs/*.jar
+            !build/libs/*-sources.jar
