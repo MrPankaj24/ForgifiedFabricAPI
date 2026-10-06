@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'The published artifact release type'
+        required: false
+        default: 'STABLE'
+        type: choice
+        options:
+          - STABLE
+          - BETA
+          - ALPHA
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    outputs:
+      changelog: ${{ steps.changelog.outputs.changelog }}
+    container:
+      image: mcr.microsoft.com/openjdk/jdk:25-ubuntu
+      options: --user root
+
+    steps:
+      - name: Install Git
+        run: apt update && apt install git -y && git --version
+
+      - name: Add safe directory
+        run: git config --global --add safe.directory /__w/ForgifiedFabricAPI/ForgifiedFabricAPI
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: FabricMC/fabric-action-scripts@v2
+        id: changelog
+        with:
+          context: changelog
+          workflow_id: release.yml
+
+      - name: Validate wrapper
+        uses: gradle/actions/wrapper-validation@v5
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-write-only: true
+
+      - name: Build with Gradle
+        run: ./gradlew clean build --stacktrace
+
+  publish:
+    name: Publish to GitHub
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'microsoft'
+          java-version: '25'
+
+      - name: Validate wrapper
+        uses: gradle/actions/wrapper-validation@v5
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      - name: Publish with Gradle
+        run: ./gradlew clean build publishGithub --stacktrace
+        env:
+          PUBLISH_RELEASE_TYPE: ${{ inputs.release_type }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANGELOG: ${{ needs.build.outputs.changelog }}
